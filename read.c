@@ -64,7 +64,7 @@ uint8_t* nthPage(databook* tome, unsigned int page);
 
 /*---Handling the pagination information for the header.---*/
 
-uint8_t* longTo4Byte(long num);
+uint8_t* longTo4Byte(uint32_t num);
 //creates an array or
 
 long bytesToLong(uint8_t* num);
@@ -82,7 +82,7 @@ char* decimalToHexString(long decimal);
 //Return a string version of the input number's hexadecimal representation
 // Used for non 0 modes. in a QR the header would be encoded as ALPHAANUMERICAL
 
-uint8_t* m0_headerGen(uint8_t* generic, int page);
+uint8_t* m0_headerGen(uint8_t* generic, uint32_t page);
 //Currently mutates the generic, so:
 // -- Write before generating next header
 // -- Free after all header have been generated
@@ -257,7 +257,7 @@ void printBin(const char* filename){
 
 void writeBinFile(uint8_t* bytes, uint32_t length, char* filename){
 		  FILE* file = fopen(filename, "wb");
-		  fwrite(bytes, BYTE_SIZE, lenght, file);
+		  fwrite(bytes, BYTE_SIZE, length, file);
 		  fclose(file);
 }
 
@@ -363,7 +363,7 @@ char* decimalToHexString(long decimal){
 		  return newstr;
 }
 
-uint8_t* longTo4Byte(long num){
+uint8_t* longTo4Byte(uint32_t num){
 		  uint8_t* new = malloc(4);
 		  
 		  //big-endian
@@ -378,7 +378,7 @@ uint8_t* longTo4Byte(long num){
 long bytesToLong(uint8_t* num){
 		  long new = 0;
 		  
-		  new += num[0] 
+		  new += num[0]; 
 		  new = (new << 8) + num[1]; //TODO why does: new += num [1] << 8 work?
 		  new = (new << 16) + num[2];
 		  new = (new << 24) + num[3];
@@ -395,7 +395,7 @@ uint8_t* m0_genericHeaderGen(databook* tome, uint8_t* hash){
 					 generic[i] = hash[i];
 		  }
 
-		  totalPages = longTo4Byte(tome->pages);
+		  uint8_t* totalPages = longTo4Byte(tome->pages);
 		  
 		  for(int i = 36; i < 40; i++){
 					 generic[i] = totalPages[i - 36];
@@ -410,18 +410,16 @@ uint8_t* m0_genericHeaderGen(databook* tome, uint8_t* hash){
 
 
 uint8_t* m0_headerGen(uint8_t* generic, uint32_t page){
-		  currentPages = longTo4Byte(page);
+		  uint8_t* currentPages = longTo4Byte(page);
 
 		  for(int i = 32; i < 36; i++){
-					 generic[i] = totalPages[i - 32];
+					 generic[i] = currentPages[i];
 		  }
 		 
-		  free(currentPage);
+		  free(currentPages);
 
 		  return generic;
 }
-
-
 
 bool m0_singleFile(databook* tome, uint32_t page, char* filename, uint8_t* header, uint32_t headerLen){
 		  if(page > tome->pages) return false;
@@ -448,7 +446,7 @@ bool m0_singleFile(databook* tome, uint32_t page, char* filename, uint8_t* heade
 					 arr[i] = pageBytes[i];
 		  }
 
-		  writeBinFile(arr, totalLen);
+		  writeBinFile(arr, totalLen, filename);
 
 		  // clean up
 		  free(arr);
@@ -461,13 +459,13 @@ bool m0_singleFile(databook* tome, uint32_t page, char* filename, uint8_t* heade
 char* generateFilename(char* ofilename, uint32_t page){
 		  size_t onameLen = strlen(ofilename);
 		  char* hexStr = decimalToHexString(page);
-		  size_t pageHexLen = strlen(page);
+		  size_t pageHexLen = strlen(hexStr);
 		  size_t nameLen = onameLen + pageHexLen;
 
 		  char* name = malloc((nameLen + 1) * sizeof(char));
 		  
 		  for(int i = 0; i < onameLen; i++){
-					 name[i] = oname[i];
+					 name[i] = ofilename[i];
 		  }
 
 		  // assigning the hex string
@@ -485,7 +483,7 @@ char* generateFilename(char* ofilename, uint32_t page){
 bool m0_deconstruct(char* filename, uint32_t pageWidth){
 		  
 		  long filesize = fs_POSIX(filename); //TODO addapt the OS agnostic version
-		  uint8_t* fileBytes = readBin(filename); // must be freed
+		  uint8_t* fileBytes = readBin(filename, filesize); // must be freed
 		  uint8_t* fileHash = hashFile(fileBytes, filesize);
 		  
 		  databook* tome = malloc(sizeof(databook));
@@ -493,23 +491,14 @@ bool m0_deconstruct(char* filename, uint32_t pageWidth){
 		  uint8_t* genericHead = m0_genericHeaderGen(tome, fileHash);
 		  long numPages = tome->pages;
 
-		  // pre-proces the final header
-		  uint8_t* fheader = m0_finalHeaderGen(tome, gneericHead);
-		  uint32_t fheaderLen = m0_finalHeaderLen(tome);
-
 		  uint8_t* fragmentHeader;
 		  char* fragmentName;
 		  long fragmentHeaderLen;
 		  for(long i = 1; i <= numPages; i++){
 					 // create the spcific header
 					 // NOTE fragment buffer isn't freed as the generic header is reused
-					 if(i == numPages){
-								fragmentHeader = fheader;
-								fragmentHeaderLen = fheaderLen;
-					 } else {
-								fragmentHeader = m0_headerGen(genericHead, i);
-								fragmentHeaderLen = M0_HEADER_DEFAULT;
-					 }
+					 fragmentHeader = m0_headerGen(genericHead, i);
+					 fragmentHeaderLen = M0_HEADER_DEFAULT;
 					 //create the fragment buffer
 
 					 // generate the name for that file
@@ -522,7 +511,6 @@ bool m0_deconstruct(char* filename, uint32_t pageWidth){
 					 free(fragmentName);
 		  }
 
-		  free(fheader);
 		  free(genericHead);
 }
 
